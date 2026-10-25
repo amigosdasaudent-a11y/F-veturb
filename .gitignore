@@ -6,3 +6,6 @@ dist/
 .diag.mjs
 .shots/
 *.local
+.env
+.env.*
+!.env.example

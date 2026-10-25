@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
 import { Icon, Logo } from '../lib/icons.jsx'
 import { useApp } from '../lib/ctx.jsx'
-import { update } from '../lib/db.js'
+import { getState, update } from '../lib/db.js'
+import { getCloudState, setCloudReady, syncCloudState, supabase, supabaseConfigured } from '../lib/supabase.js'
 import { Btn, Field, Input, Toggle } from '../components/ui.jsx'
 
 export default function Auth() {
@@ -10,19 +11,61 @@ export default function Auth() {
   const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [code, setCode] = useState('')
   const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
   const demoCode = String(100000 + (Math.floor(Date.now() / 30000) % 899999))
 
-  const doLogin = e => {
+  const doLogin = async e => {
     e?.preventDefault()
-    if (!form.email.includes('@') || form.password.length < 4) { setErr('Informe um e-mail válido e uma senha com 4+ caracteres.'); return }
+    const minPassword = supabaseConfigured ? 6 : 4
+    if (!form.email.includes('@') || form.password.length < minPassword) { setErr(`Informe um e-mail válido e uma senha com ${minPassword}+ caracteres.`); return }
+    setErr('')
+    if (supabaseConfigured) {
+      setBusy(true)
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
+        if (error) throw error
+        const remote = await getCloudState()
+        const session = { id: data.user.id, email: data.user.email, since: Date.now() }
+        if (remote) update({ ...remote, session, user: { ...remote.user, email: data.user.email } })
+        else update({ session, user: { ...db.user, email: data.user.email } })
+        setCloudReady(true)
+        if (!remote) await syncCloudState(getState())
+        showToast('Acesso seguro realizado.')
+        navigate('/dashboard')
+      } catch (error) { setErr(error.message || 'Não foi possível entrar. Confira e-mail e senha.') }
+      finally { setBusy(false) }
+      return
+    }
     if (db.user.twoFA) { setErr(''); setMode('2fa'); return }
     update(s => ({ session: { email: form.email, since: Date.now() }, user: { ...s.user, email: form.email || s.user.email } }))
     showToast('Bem-vindo ao vêTurb!')
     navigate('/dashboard')
   }
-  const doSignup = e => {
+  const doSignup = async e => {
     e.preventDefault()
-    if (!form.name.trim() || !form.email.includes('@') || form.password.length < 4) { setErr('Preencha nome, e-mail e senha (4+ caracteres).'); return }
+    const minPassword = supabaseConfigured ? 6 : 4
+    if (!form.name.trim() || !form.email.includes('@') || form.password.length < minPassword) { setErr(`Preencha nome, e-mail e senha (${minPassword}+ caracteres).`); return }
+    setErr('')
+    if (supabaseConfigured) {
+      setBusy(true)
+      try {
+        const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { data: { full_name: form.name }, emailRedirectTo: window.location.origin + window.location.pathname } })
+        if (error) throw error
+        if (!data.session) {
+          showToast('Conta criada. Confirme o e-mail e depois faça login.')
+          setMode('login')
+          return
+        }
+        const session = { id: data.user.id, email: data.user.email, since: Date.now() }
+        update({ session, user: { ...db.user, name: form.name, email: data.user.email } })
+        setCloudReady(true)
+        await syncCloudState(getState())
+        showToast('Conta criada e conectada ao banco de dados.')
+        navigate('/dashboard')
+      } catch (error) { setErr(error.message || 'Não foi possível criar a conta.') }
+      finally { setBusy(false) }
+      return
+    }
     update(s => ({ session: { email: form.email, since: Date.now() }, user: { ...s.user, name: form.name, email: form.email } }))
     showToast('Conta criada! Seu trial de 14 dias começou.')
     navigate('/dashboard')
@@ -60,9 +103,9 @@ export default function Auth() {
               <Field label="Senha"><Input value={form.password} onChange={v => setForm({ ...form, password: v })} placeholder="••••••••" type="password" /></Field>
               <div className="auth-row"><label className="checkline"><input type="checkbox" defaultChecked /> Manter conectado</label><button type="button" className="link-btn" onClick={() => showToast('Link de recuperação enviado (demonstração).')}>Esqueci minha senha</button></div>
               {err && <div className="form-error"><Icon name="alert" size={14} />{err}</div>}
-              <Btn type="submit" variant="primary" className="full" iconRight="arrowRight">Entrar</Btn>
+              <Btn type="submit" variant="primary" className="full" iconRight="arrowRight" disabled={busy}>{busy ? 'Conectando…' : 'Entrar'}</Btn>
             </form>
-            <div className="auth-demo"><Icon name="info" size={15} /><span><strong>Acesso demo:</strong> qualquer e-mail + senha com 4+ caracteres. Ex.: <code>joao@veturb.com.br</code> / <code>1234</code></span></div>
+            <div className="auth-demo"><Icon name="info" size={15} /><span>{supabaseConfigured ? <><strong>Login protegido:</strong> use o e-mail e a senha cadastrados no Supabase.</> : <><strong>Acesso de demonstração:</strong> qualquer e-mail e senha com 4+ caracteres. Ex.: <code>joao@veturb.com.br</code> / <code>1234</code></>}</span></div>
             <div className="auth-switch">Ainda não tem conta? <button onClick={() => { setMode('signup'); setErr('') }}>Criar conta grátis</button></div>
           </>}
 
@@ -72,9 +115,9 @@ export default function Auth() {
             <form onSubmit={doSignup}>
               <Field label="Nome completo"><Input value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="Seu nome" /></Field>
               <Field label="E-mail"><Input value={form.email} onChange={v => setForm({ ...form, email: v })} placeholder="voce@empresa.com" type="email" /></Field>
-              <Field label="Senha"><Input value={form.password} onChange={v => setForm({ ...form, password: v })} placeholder="Mínimo 4 caracteres" type="password" /></Field>
+              <Field label="Senha"><Input value={form.password} onChange={v => setForm({ ...form, password: v })} placeholder={`Mínimo ${supabaseConfigured ? 6 : 4} caracteres`} type="password" /></Field>
               {err && <div className="form-error"><Icon name="alert" size={14} />{err}</div>}
-              <Btn type="submit" variant="primary" className="full" iconRight="arrowRight">Criar conta</Btn>
+              <Btn type="submit" variant="primary" className="full" iconRight="arrowRight" disabled={busy}>{busy ? 'Criando conta…' : 'Criar conta'}</Btn>
             </form>
             <div className="auth-switch">Já tem conta? <button onClick={() => { setMode('login'); setErr('') }}>Entrar</button></div>
           </>}

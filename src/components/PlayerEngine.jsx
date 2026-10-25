@@ -37,6 +37,7 @@ export default function PlayerEngine({
   useEffect(() => { setDismissed(null) }, [forceState])
   const ytRef = useRef(null)
   const videoRef = useRef(null)
+  const hlsRef = useRef(null)
   const milestones = useRef(new Set())
   const stallRef = useRef({ t: -1, for: 0 })
   const progressSaved = useRef(0)
@@ -70,7 +71,7 @@ export default function PlayerEngine({
   // ---------- mídia real (YouTube IFrame API / HTML5) ----------
   useEffect(() => {
     if (!isPublic || previewParam === 'sim') return
-    const yid = youtubeId(p.videoUrl)
+    const yid = p.videoType === 'youtube' ? youtubeId(p.videoUrl) : null
     if (yid) {
       let cancelled = false
       const boot = () => {
@@ -104,10 +105,29 @@ export default function PlayerEngine({
       const t = setTimeout(() => { if (!ytRef.current?.getCurrentTime) setYtFailed(true) }, 6000)
       return () => { cancelled = true; clearTimeout(t); try { ytRef.current?.destroy?.() } catch {} }
     }
-    if (p.videoType !== 'youtube' && p.videoUrl) {
-      setMediaMode('html5')
-    }
-  }, [isPublic, p.id, p.videoUrl, p.videoType, previewParam])
+    const source = p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url) : p.videoUrl
+    if (source) setMediaMode('html5')
+    else setMediaMode('sim')
+  }, [isPublic, p.id, p.videoUrl, p.videoType, p.gumletHlsUrl, p.gumletMp4Url, previewParam])
+
+  const videoSource = p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url || '') : (p.videoUrl || '')
+  const isHls = /\.m3u8(?:[?#]|$)/i.test(videoSource)
+  useEffect(() => {
+    if (!isPublic || mediaMode !== 'html5' || !videoSource || !videoRef.current) return
+    const video = videoRef.current
+    if (!isHls) { video.src = videoSource; return }
+    if (video.canPlayType('application/vnd.apple.mpegurl')) { video.src = videoSource; return }
+    let cancelled = false
+    let hls = null
+    import('hls.js/light').then(({ default: Hls }) => {
+      if (cancelled) return
+      if (!Hls.isSupported()) { setMediaMode('sim'); return }
+      hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+      hlsRef.current = hls; hls.loadSource(videoSource); hls.attachMedia(video)
+      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { hls.destroy(); hlsRef.current = null; setMediaMode('sim') } })
+    }).catch(() => setMediaMode('sim'))
+    return () => { cancelled = true; hls?.destroy(); hlsRef.current = null }
+  }, [isPublic, mediaMode, videoSource, isHls])
 
   // ---------- relógio principal ----------
   useEffect(() => {
@@ -258,7 +278,8 @@ export default function PlayerEngine({
     ? (feat('cta') || (unlocked && time >= Number(p.cta.time || 0)))
     : (unlocked && time >= Number(p.cta.time || 0))) && !effLead && !effExit && !effAd && !effPause
   const fakePct = builder && !playing ? 42 : Math.min(100, (time / (duration || 597)) * 100 * Number(p.fakeProgress.speed || 1))
-  const thumb = youtubeId(p.videoUrl) ? `https://img.youtube.com/vi/${youtubeId(p.videoUrl)}/hqdefault.jpg` : null
+  const currentYoutubeId = p.videoType === 'youtube' ? youtubeId(p.videoUrl) : null
+  const thumb = p.posterUrl || (currentYoutubeId ? `https://img.youtube.com/vi/${currentYoutubeId}/maxresdefault.jpg` : null)
 
   const badges = []
   if (cdVisible) badges.push({ pos: p.countdown.position, key: 'cd', node:
@@ -290,12 +311,12 @@ export default function PlayerEngine({
       style={{ '--vp-accent': p.appearance.accent, '--vp-controls': p.appearance.controls, '--vp-fake-color': p.appearance.accent }}>
       {/* mídia */}
       {isPublic && youtubeId(p.videoUrl) && <div className={`vp-yt ${ytFailed ? 'hidden' : ''}`}><div id={'vt-yt-' + p.id} /></div>}
-      {isPublic && mediaMode === 'html5' && p.videoUrl && (
-        <video ref={videoRef} className="vp-video" src={p.videoUrl} playsInline muted={!unlocked} preload="metadata" onLoadedMetadata={e => setDuration(e.target.duration || 597)} onEnded={() => setPlaying(false)} />
+      {isPublic && mediaMode === 'html5' && videoSource && (
+        <video ref={videoRef} className="vp-video" src={isHls ? undefined : videoSource} poster={p.posterUrl || (currentYoutubeId ? `https://img.youtube.com/vi/${currentYoutubeId}/hqdefault.jpg` : undefined)} playsInline muted={!unlocked} preload="metadata" onLoadedMetadata={e => setDuration(e.target.duration || 597)} onEnded={() => setPlaying(false)} onError={() => setMediaMode('sim')} />
       )}
       <div className={`vp-poster ${unlocked && (mediaMode === 'yt' || mediaMode === 'html5') ? 'vp-poster-hidden' : ''}`}
         style={{ background: `linear-gradient(135deg, ${p.appearance.bg}, ${p.appearance.accent})` }}>
-        {thumb && <img src={thumb} alt="" className="vp-thumb" onError={e => { e.currentTarget.style.display = 'none' }} />}
+        {thumb && <img src={thumb} alt="" className="vp-thumb" onError={e => { if (currentYoutubeId && !p.posterUrl && e.currentTarget.dataset.fallback !== '1') { e.currentTarget.dataset.fallback = '1'; e.currentTarget.src = `https://img.youtube.com/vi/${currentYoutubeId}/hqdefault.jpg` } else e.currentTarget.style.display = 'none' }} />}
         <div className="vp-poster-veil" />
         <div className="vp-orbs"><i/><i/><i/><i/></div>
       </div>

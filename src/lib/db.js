@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { scheduleCloudSync } from './supabase.js'
 
 const KEY = 'veturb_db_v1'
 
@@ -29,6 +30,10 @@ export function defaultPlayer(over = {}) {
     name: '',
     videoUrl: '',
     videoType: 'youtube',
+    posterUrl: '',
+    gumletShareUrl: '',
+    gumletMp4Url: '',
+    gumletHlsUrl: '',
     orientation: 'horizontal',
     status: 'active',
     createdAt: Date.now(),
@@ -155,6 +160,7 @@ try {
 const listeners = new Set()
 function persist() {
   try { localStorage.setItem(KEY, JSON.stringify(state)) } catch { /* quota */ }
+  scheduleCloudSync(state)
   listeners.forEach(l => l())
 }
 export function getState() { return state }

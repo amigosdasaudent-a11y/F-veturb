@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon, Logo } from './lib/icons.jsx'
 import { Ctx, useApp } from './lib/ctx.jsx'
 import { useDB, update, getState, playersOf } from './lib/db.js'
+import { getCloudSession, getCloudState, setCloudReady, syncCloudState, supabase, supabaseConfigured } from './lib/supabase.js'
 import { Modal, Btn, Toast, Badge } from './components/ui.jsx'
 import Auth from './pages/Auth.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -45,6 +46,37 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(false)
   const [wsOpen, setWsOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
+  const [checkingCloud, setCheckingCloud] = useState(supabaseConfigured)
+
+  useEffect(() => {
+    if (!supabaseConfigured) return
+    let live = true
+    ;(async () => {
+      try {
+        const session = await getCloudSession()
+        if (!live) return
+        if (!session?.user) {
+          setCloudReady(true)
+          update({ session: null })
+          setCheckingCloud(false)
+          return
+        }
+        const remote = await getCloudState()
+        if (!live) return
+        const cloudUser = { id: session.user.id, email: session.user.email, since: Date.now() }
+        if (remote) update({ ...remote, session: cloudUser, user: { ...remote.user, email: session.user.email } })
+        else update({ session: cloudUser, user: { ...db.user, email: session.user.email } })
+        setCloudReady(true)
+        if (!remote) await syncCloudState(getState())
+      } catch (error) {
+        console.error('Falha ao iniciar Supabase:', error)
+        setCloudReady(false)
+        update({ session: null })
+        showToast?.('Não foi possível conectar ao Supabase. Confira a configuração.', 'error')
+      } finally { if (live) setCheckingCloud(false) }
+    })()
+    return () => { live = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const showToast = useCallback((message, tone = 'success') => setToast({ message, tone, id: Date.now() }), [])
   const ctx = useMemo(() => ({ db, navigate, showToast, path }), [db, navigate, showToast, path])
@@ -53,6 +85,7 @@ export default function App() {
   if (isPublic) {
     return <Ctx.Provider value={ctx}><PublicPlayer path={path} />{toast && <Toast key={toast.id} {...toast} onDone={() => setToast(null)} />}</Ctx.Provider>
   }
+  if (checkingCloud) return <div className="cloud-loading"><Logo size={40} withText /><span>Conectando à sua conta segura…</span></div>
   if (!db.session) {
     return <Ctx.Provider value={ctx}><Auth />{toast && <Toast key={toast.id} {...toast} onDone={() => setToast(null)} />}</Ctx.Provider>
   }
@@ -91,7 +124,7 @@ export default function App() {
           </div>
           <div className="side-bottom">
             <button className="side-link" onClick={() => setCollapsed(v => !v)}><Icon name="menu" size={18} />{!collapsed && <span>Recolher Menu</span>}</button>
-            <button className="side-link logout" onClick={() => { update({ session: null }); navigate('/dashboard') }}><Icon name="logout" size={18} />{!collapsed && <span>Sair da conta</span>}</button>
+            <button className="side-link logout" onClick={async () => { if (supabase) await supabase.auth.signOut(); setCloudReady(false); update({ session: null }); navigate('/dashboard') }}><Icon name="logout" size={18} />{!collapsed && <span>Sair da conta</span>}</button>
           </div>
         </aside>
 

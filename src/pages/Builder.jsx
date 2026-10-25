@@ -34,7 +34,7 @@ export default function Builder({ path }) {
   const editId = path.match(/^\/players\/([^/]+)\/edit/)?.[1]
   const existing = editId ? playerById(db, editId) : null
   const [p, setP] = useState(() => existing ? structuredClone(existing) : defaultPlayer({ workspaceId: db.activeWorkspace }))
-  const [open, setOpen] = useState('config')
+  const [open, setOpen] = useState(null)
   const [visited, setVisited] = useState(() => existing ? SECTIONS.map(s => s.id) : ['config'])
   const [saved, setSaved] = useState(!!existing)
   const [vertical, setVertical] = useState(p.orientation === 'vertical')
@@ -99,6 +99,7 @@ export default function Builder({ path }) {
         {/* ---------- COLUNA ESQUERDA: CONFIGURAÇÕES ---------- */}
         <aside className="builder-left">
           <div className="builder-left-inner">
+            <div className="builder-sections-label"><strong>Seções do player</strong><span>{SECTIONS.length} configurações</span></div>
             {SECTIONS.map(s => (
               <Section key={s.id} title={s.title} subtitle={s.subtitle} icon={s.icon} open={open === s.id} onToggle={() => toggleSection(s.id)}
                 badge={s.id === 'ads' && p.ads.length ? p.ads.length : null}>
@@ -166,11 +167,29 @@ function SectionBody({ id, p, setTop, setKey, vertical, setVertical, setAd, addA
   switch (id) {
     case 'config': return <>
       <Field label="Nome de Identificação"><Input value={p.name} onChange={v => setTop('name', v)} placeholder="Ex: Player Página de Vendas" /></Field>
-      <Field label="URL do Vídeo (YouTube, MP4 ou Upload)" hint="Cole um link do YouTube, um MP4 direto ou envie seu arquivo.">
-        <div className="input-with-btn"><Input value={p.videoUrl} onChange={v => setTop('videoUrl', v)} placeholder="https://www.youtube.com/watch?v=..." />
-          <label className="upload-btn"><Icon name="upload" size={15} /> Upload<input type="file" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { uploadFile(f, url => { setTop('videoUrl', url); setTop('videoType', 'upload') }) } }} /></label>
-        </div>
+      <Field label="Origem do vídeo">
+        <Segmented size="sm" value={p.videoType === 'gumlet' ? 'gumlet' : p.videoType === 'upload' || p.videoType === 'direct' ? 'direct' : 'youtube'} onChange={v => setTop('videoType', v)} options={[{ value: 'youtube', label: 'YouTube' }, { value: 'gumlet', label: 'Gumlet' }, { value: 'direct', label: 'MP4 / Upload' }]} />
       </Field>
+      {p.videoType === 'gumlet' ? <>
+        <div className="gumlet-help"><strong>Como usar</strong><span>No Gumlet, abra <b>Share video → URLs</b>. Cole aqui o link MP4 ou HLS e a miniatura. O link de compartilhamento é opcional.</span></div>
+        <Field label="Link público de compartilhamento (opcional)"><Input value={p.gumletShareUrl || ''} onChange={v => setTop('gumletShareUrl', v)} placeholder="https://gumlet.tv/watch/..." /></Field>
+        <Field label="URL de reprodução MP4" hint="Recomendado: compatível com a maioria dos navegadores."><Input value={p.gumletMp4Url || ''} onChange={v => setTop('gumletMp4Url', v)} placeholder="https://video.gumlet.io/.../video.mp4" /></Field>
+        <Field label="URL de reprodução HLS (opcional)" hint="Link .m3u8; reprodução adaptativa. Se preenchido, tem prioridade sobre o MP4."><Input value={p.gumletHlsUrl || ''} onChange={v => setTop('gumletHlsUrl', v)} placeholder="https://video.gumlet.io/.../master.m3u8" /></Field>
+        <Field label="URL da miniatura"><Input value={p.posterUrl || ''} onChange={v => setTop('posterUrl', v)} placeholder="https://video.gumlet.io/.../thumbnail.jpg" /></Field>
+      </> : p.videoType === 'youtube' ? <>
+        <Field label="Link do vídeo no YouTube" hint="Use um vídeo público ou não listado. A miniatura é identificada automaticamente.">
+          <Input value={p.videoUrl} onChange={v => setTop('videoUrl', v)} placeholder="https://www.youtube.com/watch?v=..." />
+        </Field>
+        <Field label="URL da miniatura (opcional)" hint="Use se a imagem automática do YouTube não carregar."><Input value={p.posterUrl || ''} onChange={v => setTop('posterUrl', v)} placeholder="https://.../miniatura.jpg" /></Field>
+      </> : <>
+        <Field label="URL do vídeo MP4" hint="Cole um link direto ou selecione um arquivo (URL local somente nesta sessão).">
+          <div className="input-with-btn"><Input value={p.videoUrl} onChange={v => setTop('videoUrl', v)} placeholder="https://seusite.com/video.mp4" />
+            <label className="upload-btn"><Icon name="upload" size={15} /> Upload<input type="file" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { uploadFile(f, url => { setTop('videoUrl', url); setTop('videoType', 'upload') }) } }} /></label>
+          </div>
+        </Field>
+        <Field label="URL da miniatura (opcional)"><Input value={p.posterUrl || ''} onChange={v => setTop('posterUrl', v)} placeholder="https://.../miniatura.jpg" /></Field>
+      </>}
+      {p.videoType === 'gumlet' && !p.gumletHlsUrl && !p.gumletMp4Url && <div className="mini-info"><Icon name="info" size={14} /> Cole o MP4 ou HLS gerado no Gumlet para carregar o vídeo. O link “Share URL” sozinho abre a página Gumlet, não o arquivo de vídeo.</div>}
       <Field label="Formato do vídeo"><Segmented size="sm" value={vertical ? 'vertical' : 'horizontal'} onChange={v => setVertical(v === 'vertical')} options={[{ value: 'horizontal', label: 'Horizontal 16:9' }, { value: 'vertical', label: 'Vertical 9:16' }]} /></Field>
       <Field label="Status"><Select value={p.status} onChange={v => setTop('status', v)} options={[{ value: 'active', label: 'Ativo (publicado)' }, { value: 'draft', label: 'Rascunho' }]} /></Field>
       <div className="mini-info"><Icon name="info" size={14} /> O player funciona mesmo sem vídeo: use o modo simulação para testar todos os recursos.</div>

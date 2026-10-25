@@ -1,6 +1,6 @@
 # vêTurb — SaaS de VSLs e Players Inteligentes
 
-Aplicação funcional construída a partir da descrição do produto e da sequência de telas enviadas (painel admin, builder de player, leads e métricas). É um **SaaS multi-tenant front-end completo**, com persistência em `localStorage`, player público/embed de verdade e painel de métricas alimentado por eventos reais de tracking.
+Aplicação construída a partir da descrição do produto e da sequência de telas enviadas (painel, builder de player, leads e métricas). O projeto funciona em modo demonstração com `localStorage` e agora inclui integração opcional de autenticação/persistência de estado no Supabase, suporte a vídeos Gumlet via URLs MP4/HLS e miniatura personalizada. Para ativar o Supabase são necessárias as variáveis públicas do seu projeto e a migração SQL; detalhes abaixo.
 
 ![Dashboard](docs/screenshots/02-dashboard.png)
 
@@ -21,10 +21,23 @@ npm run build        # gera dist/
 npm run preview      # serve dist/ em 0.0.0.0:4173
 ```
 
-Requisitos: Node.js 20.19+ (testado em 20.20.2). Não é necessário backend, banco ou chaves de API para rodar.
+Requisitos: Node.js 20.19+ (testado em 20.20.2). Sem configurar variáveis, o app abre em modo demonstração local. Para persistência entre dispositivos, configure o Supabase seguindo a seção abaixo.
 
-**Acesso demo:** qualquer e-mail + senha com 4+ caracteres, por exemplo `joao@veturb.com.br` / `1234`.
-Se o 2FA estiver ativado, o código de 6 dígitos é exibido na própria tela de login (muda a cada 30 segundos).
+**Acesso demo (sem Supabase):** qualquer e-mail + senha com 4+ caracteres, por exemplo `joao@veturb.com.br` / `1234`.
+**Com Supabase configurado:** login e criação de conta usam Supabase Auth.
+Se o 2FA demo estiver ativado, o código de 6 dígitos é exibido na própria tela de login (no momento, o TOTP/MFA real ainda não está ligado ao Supabase).
+
+---
+
+## 🗄️ Configurar banco Supabase
+
+O projeto tem integração com Supabase Auth e sincronização do estado privado da conta (`veturb_state`). Nesta sessão, a migração foi aplicada ao projeto **Lead turb pro** (região `sa-east-1`) e o preview foi configurado para esse projeto. Para reproduzir em outro ambiente/projeto:
+
+1. No **SQL Editor**, execute `supabase/migrations/001_veturb_state.sql`.
+2. Copie `.env.example` para `.env.local` e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com **Project URL** e **anon/public key** do painel Supabase.
+3. Reinicie o Vite (`npm run dev`). Use **Criar conta** para registrar um usuário; em seguida entre com esse e-mail e senha.
+
+A chave `anon/public` pode ser usada no navegador **somente junto com RLS**, como a política da migração. **Nunca coloque a `service_role key` no front-end**, nem a envie por chat. Sem as variáveis, segue funcionando em modo local. O estado principal do painel é armazenado como JSON por usuário autenticado; o esquema normalizado, MFA, colaboração entre usuários do mesmo workspace, publicação pública de players e ingestão segura de eventos/Leads via Edge Functions precisam de configuração complementar antes de produção.
 
 ---
 
@@ -51,7 +64,7 @@ O roteamento é por hash, então funciona em **Vercel, Netlify, Cloudflare Pages
 
 A coluna esquerda replica a estrutura das imagens, em acordeão (uma seção aberta por vez). A seção aberta **liga o recurso correspondente no preview**, exatamente como na sequência de telas enviada.
 
-1. **Configurações** — nome, URL do vídeo (YouTube/MP4/upload), formato 16:9 ou 9:16, status.
+1. **Configurações** — nome e formato 16:9 ou 9:16; origem YouTube, MP4/arquivo ou Gumlet. Para Gumlet, há campos distintos para link de compartilhamento, MP4, HLS (.m3u8) e miniatura. HLS toca com hls.js; YouTube tenta miniatura automática e aceita URL de miniatura manual como alternativa.
 2. **Aparência** — cor da linha de destaque, botões controladores, fundo e texto.
 3. **Controles** — menu de qualidade, voltar/avançar 5s, tela cheia, timecode, barra de progresso.
 4. **Progresso Simulado** — fake progress com velocidade e grossura da barra.
@@ -69,6 +82,8 @@ A coluna esquerda replica a estrutura das imagens, em acordeão (uma seção abe
 ![Captura de leads](docs/screenshots/09-builder-lead.png)
 
 A coluna central traz o preview responsivo com alternância **Vídeo Horizontal / Vídeo Vertical (Shorts)**; a direita mostra o estado bloqueado antes de salvar e, depois, libera o **código iframe responsivo** e o **link direto** com botões de copiar.
+
+**Gumlet:** envie o arquivo na biblioteca do Gumlet; em **Share video → URLs**, copie a URL MP4 (recomendada) ou HLS `.m3u8` e a URL da miniatura para os campos correspondentes no vêTurb. O campo Share URL é guardado como referência; ele não substitui o URL direto de reprodução. O HLS é reproduzido via hls.js em navegadores sem suporte HLS nativo.
 
 ![Player salvo e códigos de incorporação](docs/screenshots/11-builder-saved.png)
 
@@ -124,24 +139,29 @@ Ao interagir com o player público, os eventos são gravados e também enviados 
 | Item | Status |
 | --- | --- |
 | Interface completa, builder, preview, embeds, player, gráficos, leads, 2FA, workspaces | ✅ Funcional |
-| Persistência (players, leads, eventos, plano, sessão, workspaces) | ✅ `localStorage` (sobrevive ao reload) |
-| YouTube IFrame API / MP4 HTML5 | ✅ Real (com fallback para simulação) |
+| Persistência em modo demonstração | ✅ `localStorage` (neste navegador) |
+| Supabase Auth + estado JSON privado por usuário | ✅ Integração opcional preparada; requer URL/chave pública e migração SQL |
+| YouTube IFrame API / MP4 HTML5 / Gumlet MP4 e HLS | ✅ Compatibilidade implementada (Gumlet via URLs copiadas do painel) |
 | Eventos `fbq` / `dataLayer` | ✅ Disparados quando os scripts/IDs existem |
 | Whitelist de domínios e bloqueio DevTools | ✅ Real na rota pública |
 | Checkout Mercado Pago PIX | 🔶 Simulado (sem chamada à API, sem cobrança) |
 | Código TOTP do 2FA | 🔶 Demo (código exibido na tela, não é TOTP criptográfico) |
 | Upload de vídeo/imagem | 🔶 URL local temporária da sessão (`URL.createObjectURL`) |
-| Auth, Supabase/PostgreSQL, Edge Functions, Storage, assinaturas reais | ⛔ Substituídos por camada local — ponto de integração para produção |
+| Upload do vídeo para Gumlet a partir do vêTurb | ⛔ Não é upload direto: envie no Gumlet e cole os URLs MP4/HLS/miniatura no builder |
+| Players públicos e ingestão de eventos/leads por Edge Function no Supabase | 🔶 Ainda exigem endpoints/funções de servidor antes de produção |
+| Cobrança Mercado Pago e armazenamento permanente de arquivos | 🔶 Simulados/não configurados |
 
-A descrição original cita **React 19, Vite 7, Tailwind v4, shadcn/ui, TanStack Query, React Router e Supabase**. Esta implementação usa **React 19 + Vite 6 + CSS puro** (sem dependências de UI externas, para rodar offline no preview), hash routing e persistência local. A estrutura está preparada para trocar `src/lib/db.js` por Supabase/PostgreSQL e conectar o Mercado Pago real sem alterar as telas.
+A descrição original cita **React 19, Vite 7, Tailwind v4, shadcn/ui, TanStack Query, React Router e Supabase**. Esta implementação usa **React 19 + Vite 6 + CSS puro**, hash routing, camada local de demonstração e integração Supabase opcional (`src/lib/supabase.js`).
 
-### Variável de ambiente opcional
+### Variáveis de ambiente
 
 ```bash
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua_chave_anon_publica
 VITE_EMBED_BASE_URL=https://seu-dominio.com.br
 ```
 
-Define a base usada nos códigos de iframe/link direto. Sem ela, o app usa a origem atual (funciona automaticamente no preview do Arena, Vercel, Netlify etc.).
+As duas primeiras conectam autenticação e sincronização privada do painel. A última define a base dos links de iframe/player; se omitida, usa a origem atual. No Vercel, configure essas variáveis nas opções do projeto e substitua `VITE_EMBED_BASE_URL` pelo domínio publicado. A chave `service_role` não deve ser usada no front-end.
 
 ---
 
