@@ -15,6 +15,10 @@ export function embedBase() {
   const configured = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_EMBED_BASE_URL) || ''
   if (configured) return String(configured).replace(/\/$/, '')
   if (typeof window === 'undefined') return ''
+  // No ambiente local, os links públicos devem apontar para a aplicação hospedada,
+  // não para localhost, que só existe no computador de desenvolvimento.
+  const localHosts = ['localhost', '127.0.0.1', '0.0.0.0']
+  if (localHosts.includes(window.location.hostname)) return 'https://veturb.vercel.app'
   return (window.location.origin + window.location.pathname).replace(/\/$/, '')
 }
 

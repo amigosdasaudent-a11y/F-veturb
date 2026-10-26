@@ -14,8 +14,9 @@ export default function PlayerEngine({
   const isPublic = mode === 'public'
   const builder = !isPublic
   const vert = vertical ?? p.orientation === 'vertical'
+  const hasConfiguredSource = p.videoType === 'gumlet' ? Boolean(p.gumletHlsUrl || p.gumletMp4Url) : Boolean(p.videoUrl)
   const [time, setTime] = useState(0)
-  const [duration, setDuration] = useState(isPublic ? 0 : 597)
+  const [duration, setDuration] = useState(hasConfiguredSource || isPublic ? 0 : 597)
   const [playing, setPlaying] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
   const [realElapsed, setRealElapsed] = useState(0)
@@ -32,6 +33,8 @@ export default function PlayerEngine({
   const [devBlocked, setDevBlocked] = useState(false)
   const [domainBlocked, setDomainBlocked] = useState(false)
   const [mediaMode, setMediaMode] = useState('sim')
+  const [mediaError, setMediaError] = useState('')
+  const [mediaRetry, setMediaRetry] = useState(0)
   const [ytFailed, setYtFailed] = useState(false)
   const [dismissed, setDismissed] = useState(null)
   useEffect(() => { setDismissed(null) }, [forceState])
@@ -70,7 +73,11 @@ export default function PlayerEngine({
 
   // ---------- mídia real (YouTube IFrame API / HTML5) ----------
   useEffect(() => {
-    if (!isPublic || previewParam === 'sim') return
+    if (previewParam === 'sim') return
+    setMediaError('')
+    setYtFailed(false)
+    setTime(0); setPlaying(false); setUnlocked(false)
+    setDuration((p.videoType === 'gumlet' ? Boolean(p.gumletHlsUrl || p.gumletMp4Url) : Boolean(p.videoUrl)) ? 0 : (isPublic ? 0 : 597))
     const yid = p.videoType === 'youtube' ? youtubeId(p.videoUrl) : null
     if (yid) {
       setMediaMode('loading')
@@ -108,30 +115,30 @@ export default function PlayerEngine({
     }
     const source = p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url) : p.videoUrl
     if (source) setMediaMode('html5')
-    else setMediaMode('none')
-  }, [isPublic, p.id, p.videoUrl, p.videoType, p.gumletHlsUrl, p.gumletMp4Url, previewParam])
+    else setMediaMode(isPublic ? 'none' : 'sim')
+  }, [isPublic, p.id, p.videoUrl, p.videoType, p.gumletHlsUrl, p.gumletMp4Url, previewParam, mediaRetry])
 
   const videoSource = p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url || '') : (p.videoUrl || '')
   const isHls = /\.m3u8(?:[?#]|$)/i.test(videoSource)
   useEffect(() => {
-    if (!isPublic || mediaMode !== 'html5' || !videoSource || !videoRef.current) return
+    if (mediaMode !== 'html5' || !videoSource || !videoRef.current) return
     const video = videoRef.current
     if (!isHls) { video.src = videoSource; return }
     let cancelled = false
     let hls = null
-    import('hls.js/light').then(({ default: Hls }) => {
+    import('hls.js').then(({ default: Hls }) => {
       if (cancelled) return
       if (!Hls.isSupported()) {
         if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = videoSource
-        else setMediaMode('error')
+        else { setMediaError('Este navegador não oferece suporte a HLS nativo e HLS.js não está disponível.'); setMediaMode('error') }
         return
       }
       hls = new Hls({ enableWorker: true, lowLatencyMode: false })
       hlsRef.current = hls; hls.loadSource(videoSource); hls.attachMedia(video)
-      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { hls.destroy(); hlsRef.current = null; setMediaMode('error') } })
-    }).catch(() => { if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = videoSource; else setMediaMode('error') })
+      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { setMediaError(`HLS ${data.type}: ${data.details}`); setPlaying(false); hls.destroy(); hlsRef.current = null; setMediaMode('error') } })
+    }).catch(error => { if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = videoSource; else { setMediaError(error?.message || 'Falha ao iniciar HLS.js'); setPlaying(false); setMediaMode('error') } })
     return () => { cancelled = true; hls?.destroy(); hlsRef.current = null }
-  }, [isPublic, mediaMode, videoSource, isHls])
+  }, [isPublic, mediaMode, videoSource, isHls, mediaRetry])
 
   // ---------- relógio principal ----------
   useEffect(() => {
@@ -146,7 +153,7 @@ export default function PlayerEngine({
         const t = ytRef.current.getCurrentTime() || 0
         if (Math.abs(t - stallRef.current.t) < .001) {
           stallRef.current.for += dt
-          if (stallRef.current.for > (isHls ? 12 : 5)) { setMediaMode('error'); stallRef.current.for = 0 }
+          if (stallRef.current.for > (isHls ? 12 : 5)) { setMediaError('A reprodução parou de avançar. Verifique a conexão e as permissões do vídeo.'); setMediaMode('error'); stallRef.current.for = 0 }
         } else { stallRef.current.t = t; stallRef.current.for = 0 }
         setTime(t)
         const d = Number(ytRef.current.getDuration?.())
@@ -155,7 +162,7 @@ export default function PlayerEngine({
         const t = videoRef.current.currentTime || 0
         if (Math.abs(t - stallRef.current.t) < .001) {
           stallRef.current.for += dt
-          if (stallRef.current.for > (isHls ? 12 : 5)) { setMediaMode('error'); stallRef.current.for = 0 }
+          if (stallRef.current.for > (isHls ? 12 : 5)) { setMediaError('A reprodução parou de avançar. Verifique a conexão e as permissões do vídeo.'); setMediaMode('error'); stallRef.current.for = 0 }
         } else { stallRef.current.t = t; stallRef.current.for = 0 }
         setTime(t)
       } else if (!isPublic && mediaMode === 'sim') {
@@ -255,6 +262,12 @@ export default function PlayerEngine({
     } catch {}
     if (!milestones.current.has('play') || from != null) { milestones.current.add('play'); log('play') }
   }
+  function retryMedia() {
+    setMediaError(''); setPlaying(false); setUnlocked(false); setTime(0)
+    setDuration(hasConfiguredSource ? 0 : (isPublic ? 0 : 597))
+    setMediaMode('loading')
+    setMediaRetry(value => value + 1)
+  }
   const togglePlay = () => {
     if (!unlocked) return playMedia()
     if (playing) {
@@ -316,9 +329,9 @@ export default function PlayerEngine({
     <div className={`vp vp-${vert ? 'vertical' : 'horizontal'} ${unlocked ? 'vp-unlocked' : ''} ${className}`}
       style={{ '--vp-accent': p.appearance.accent, '--vp-controls': p.appearance.controls, '--vp-fake-color': p.appearance.accent }}>
       {/* mídia */}
-      {isPublic && youtubeId(p.videoUrl) && <div className={`vp-yt ${ytFailed ? 'hidden' : ''}`}><div id={'vt-yt-' + p.id} /></div>}
-      {isPublic && mediaMode === 'html5' && videoSource && (
-        <video ref={videoRef} className="vp-video" src={isHls ? undefined : videoSource} poster={p.posterUrl || (currentYoutubeId ? `https://img.youtube.com/vi/${currentYoutubeId}/hqdefault.jpg` : undefined)} playsInline muted={!unlocked} preload="metadata" onLoadedMetadata={e => { const d = Number(e.target.duration); if (Number.isFinite(d) && d > 0) setDuration(d) }} onEnded={() => setPlaying(false)} onError={!isHls ? () => setMediaMode('error') : undefined} />
+      {youtubeId(p.videoUrl) && <div className={`vp-yt ${ytFailed ? 'hidden' : ''}`}><div id={'vt-yt-' + p.id} /></div>}
+      {mediaMode === 'html5' && videoSource && (
+        <video ref={videoRef} className="vp-video" src={isHls ? undefined : videoSource} poster={p.posterUrl || (currentYoutubeId ? `https://img.youtube.com/vi/${currentYoutubeId}/hqdefault.jpg` : undefined)} playsInline muted={!unlocked} preload="metadata" onLoadedMetadata={e => { const d = Number(e.target.duration); if (Number.isFinite(d) && d > 0) setDuration(d); if (unlocked) e.currentTarget.play().catch(() => {}) }} onEnded={() => setPlaying(false)} onError={e => { const err = e.currentTarget.error; setMediaError(err ? `Vídeo HTML5: código ${err.code}${err.message ? ` — ${err.message}` : ''}` : 'Erro de mídia do navegador'); setPlaying(false); setMediaMode('error') }} />
       )}
       <div className={`vp-poster ${unlocked && (mediaMode === 'yt' || mediaMode === 'html5') ? 'vp-poster-hidden' : ''}`}
         style={{ background: `linear-gradient(135deg, ${p.appearance.bg}, ${p.appearance.accent})` }}>
@@ -326,18 +339,19 @@ export default function PlayerEngine({
         <div className="vp-poster-veil" />
         <div className="vp-orbs"><i/><i/><i/><i/></div>
       </div>
-      {isPublic && ['none', 'error', 'loading'].includes(mediaMode) && <div className="vp-media-status">
+      {((isPublic && mediaMode === 'none') || mediaMode === 'error' || mediaMode === 'loading') && <div className="vp-media-status">
         <Icon name={mediaMode === 'loading' ? 'refresh' : mediaMode === 'none' ? 'film' : 'alert'} size={30} />
         <strong>{mediaMode === 'loading' ? 'Carregando vídeo…' : mediaMode === 'none' ? 'Vídeo não configurado' : 'Não foi possível reproduzir este vídeo'}</strong>
-        <span>{mediaMode === 'none' ? 'O proprietário precisa adicionar uma fonte de vídeo antes de publicar.' : mediaMode === 'error' ? 'Confira a URL e as permissões da mídia no Gumlet ou YouTube.' : 'Aguarde enquanto o player conecta à fonte de vídeo.'}</span>
+        <span>{mediaMode === 'none' ? 'O proprietário precisa adicionar uma fonte de vídeo antes de publicar.' : mediaMode === 'error' ? (mediaError || 'Confira a URL e as permissões da mídia no Gumlet ou YouTube.') : 'Aguarde enquanto o player conecta à fonte de vídeo.'}</span>
+        {mediaMode === 'error' && <button type="button" onClick={retryMedia} style={{ marginTop: 12, padding: '8px 14px', border: '1px solid rgba(255,255,255,.35)', borderRadius: 8, color: '#fff', background: 'rgba(255,255,255,.12)', cursor: 'pointer' }}>Tentar novamente</button>}
       </div>}
 
       {/* gate de áudio */}
-      {!unlocked && !showResume && !effLead && !effExit && !effPause && !effAd && (!isPublic || !['none', 'error', 'loading'].includes(mediaMode)) && (
+      {!unlocked && !showResume && !effLead && !effExit && !effPause && !effAd && !['none', 'error', 'loading'].includes(mediaMode) && (
         <button className="vp-gate" onClick={() => playMedia()}>
-          <span className="vp-headline">SEU VÍDEO JÁ COMEÇOU</span>
+          <span className="vp-headline">{builder && mediaMode === 'sim' ? 'Prévia do player' : 'SEU VÍDEO JÁ COMEÇOU'}</span>
           <span className="vp-mute-icon"><Icon name="volume" size={vert ? 72 : 88} /></span>
-          <span className="vp-cta-audio">Clique para ouvir</span>
+          <span className="vp-cta-audio">{builder && mediaMode === 'sim' ? 'Simular reprodução' : 'Clique para ouvir'}</span>
           <span className="vp-play-badge"><Icon name="play" size={20} /></span>
         </button>
       )}
@@ -450,7 +464,7 @@ export default function PlayerEngine({
       {devBlocked && <div className="vp-devtoast"><Icon name="shield" size={15} /> Inspeção bloqueada neste player</div>}
 
       {/* botão de simulação (apenas builder) */}
-      {builder && !unlocked && !effLead && !effExit && !effPause && !effAd && (
+      {builder && mediaMode === 'sim' && !unlocked && !effLead && !effExit && !effPause && !effAd && (
         <button className="vp-sim-hint" onClick={() => playMedia()}>▶ Simular reprodução</button>
       )}
     </div>

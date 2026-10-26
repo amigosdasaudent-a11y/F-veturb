@@ -5,12 +5,25 @@ Aplicação construída a partir da descrição do produto e da sequência de te
 
 ---
 
-## ▶️ Como executar
+## ▶️ Como executar no Windows
+
+**Não abra `index.html` com duplo clique:** o projeto precisa do servidor Vite, senão pode aparecer uma tela em branco. Instale Node.js LTS (https://nodejs.org/), extraia o ZIP e dê duplo clique em `ABRIR-VETURB.bat`. Na primeira execução, o script instala as dependências e abre `http://localhost:5173` no navegador. Para encerrar, volte à janela preta e pressione Ctrl+C.
+
+Alternativamente, no PowerShell, dentro da pasta do projeto:
+
+```powershell
+npm install
+npm run dev
+```
+
+Depois acesse `http://localhost:5173`.
+
+## ▶️ Como executar no Linux/macOS
 
 ```bash
-cd /home/user/veturb
+cd /caminho/para/veturb
 npm install
-npm run dev          # http://localhost:5173  (bind 0.0.0.0 — compatível com o preview do Arena)
+npm run dev          # http://localhost:5173
 ```
 
 Build de produção:

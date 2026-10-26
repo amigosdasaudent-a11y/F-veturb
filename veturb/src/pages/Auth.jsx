@@ -83,7 +83,7 @@ export default function Auth() {
         const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { data: { full_name: form.name }, emailRedirectTo: window.location.origin + window.location.pathname } })
         if (error) throw error
         if (!data.session) {
-          showToast('Conta criada. Confirme o e-mail e depois faça login.')
+          showToast('Conta registrada. Entre com o e-mail e a senha cadastrados.')
           setMode('login')
           return
         }
