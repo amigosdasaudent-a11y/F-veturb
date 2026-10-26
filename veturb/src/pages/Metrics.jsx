@@ -19,6 +19,15 @@ export default function Metrics() {
   const plays = days.reduce((a, b) => a + b.plays, 0)
   const ctas = days.reduce((a, b) => a + b.cta, 0)
   const conv = days.reduce((a, b) => a + b.conversions, 0)
+  const exportCSV = () => {
+    const rows = [['Data', 'Visualizações', 'Plays', 'Cliques CTA', 'Conversões'], ...days.map(d => [d.date.toLocaleDateString('pt-BR'), d.views, d.plays, d.cta, d.conversions])]
+    const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    a.download = `veturb-metricas-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click(); URL.revokeObjectURL(a.href)
+    showToast('Relatório CSV baixado.')
+  }
 
   const funnel = [
     { label: 'Visualizações', value: views, color: '#3b82f6' },
@@ -30,11 +39,11 @@ export default function Metrics() {
   return (
     <div className="content">
       <div className="page-head">
-        <div><h1>Métricas</h1><p>Acompanhe visualizações, retenção, cliques nos CTAs e conversões em tempo real.</p></div>
+        <div><h1>Métricas</h1><p>Visualizações, retenção, cliques e conversões dos eventos registrados pelos seus players.</p></div>
         <div className="head-actions">
           <Select value={playerFilter} onChange={setPlayerFilter} options={[{ value: 'all', label: 'Todos os players' }, ...players.map(p => ({ value: p.id, label: p.name }))]} />
           <div className="seg-range">{[7, 14].map(r => <button key={r} className={range === r ? 'active' : ''} onClick={() => setRange(r)}>{r}d</button>)}</div>
-          <Btn variant="outline" icon="download" onClick={() => showToast('Relatório exportado (demonstração)')}>Exportar</Btn>
+          <Btn variant="outline" icon="download" onClick={exportCSV}>Exportar CSV</Btn>
         </div>
       </div>
 
@@ -71,7 +80,7 @@ export default function Metrics() {
       </div>
 
       <div className="card">
-        <div className="card-head"><div><h3>Log de eventos de tracking</h3><p>Facebook Pixel · Google Tag Manager (dataLayer)</p></div><Badge tone="green"><i className="live-dot" /> Ao vivo</Badge></div>
+        <div className="card-head"><div><h3>Log de eventos de tracking</h3><p>Facebook Pixel · Google Tag Manager (dataLayer)</p></div><Badge tone="neutral">Eventos registrados</Badge></div>
         <div className="event-log">
           {[...events].sort((a, b) => b.ts - a.ts).slice(0, 12).map((e, i) => <div className="log-line" key={i}><span className={`log-dot ev-${e.type}`} /><time>{fmtDateTime(e.ts)}</time><code>{({ view: 'PageView', play: 'PlayerPlay', progress: 'PlayerProgress', cta: 'PlayerCtaClick', conversion: 'PlayerLead' })[e.type]}</code><span className="log-player">{db.players.find(p => p.id === e.playerId)?.name || '—'}</span>{typeof e.pct === 'number' && <span className="log-pct">{e.pct}%</span>}</div>)}
           {events.length === 0 && <EmptyState icon="chart" title="Nenhum evento ainda" text="Abra um player público para começar a gerar eventos." />}

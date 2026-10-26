@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icon, Logo } from './lib/icons.jsx'
 import { Ctx, useApp } from './lib/ctx.jsx'
-import { useDB, update, getState, playersOf } from './lib/db.js'
+import { useDB, update, getState, playersOf, cleanDemoState, emptyAccountState } from './lib/db.js'
 import { getCloudSession, getCloudState, setCloudReady, syncCloudState, supabase, supabaseConfigured } from './lib/supabase.js'
 import { Modal, Btn, Toast, Badge } from './components/ui.jsx'
 import Auth from './pages/Auth.jsx'
@@ -63,11 +63,17 @@ export default function App() {
         }
         const remote = await getCloudState()
         if (!live) return
-        const cloudUser = { id: session.user.id, email: session.user.email, since: Date.now() }
-        if (remote) update({ ...remote, session: cloudUser, user: { ...remote.user, email: session.user.email } })
-        else update({ session: cloudUser, user: { ...db.user, email: session.user.email } })
+        const cleanedRemote = remote ? cleanDemoState(remote) : null
+        let twoFA = false
+        try {
+          const { data: factors } = await supabase.auth.mfa.listFactors()
+          twoFA = (factors?.totp || []).some(f => f.status === 'verified')
+        } catch {}
+        const cloudUser = { id: session.user.id, email: session.user.email, since: session.user.created_at || Date.now() }
+        if (cleanedRemote) update({ ...cleanedRemote, session: cloudUser, user: { ...cleanedRemote.user, email: session.user.email, twoFA } })
+        else update(emptyAccountState(cloudUser, { email: session.user.email, name: session.user.user_metadata?.full_name || '', twoFA }))
         setCloudReady(true)
-        if (!remote) await syncCloudState(getState())
+        if (!remote || JSON.stringify(cleanedRemote) !== JSON.stringify(remote)) await syncCloudState(getState())
       } catch (error) {
         console.error('Falha ao iniciar Supabase:', error)
         setCloudReady(false)

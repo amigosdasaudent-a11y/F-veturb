@@ -15,7 +15,7 @@ export default function PlayerEngine({
   const builder = !isPublic
   const vert = vertical ?? p.orientation === 'vertical'
   const [time, setTime] = useState(0)
-  const [duration, setDuration] = useState(597)
+  const [duration, setDuration] = useState(isPublic ? 0 : 597)
   const [playing, setPlaying] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
   const [realElapsed, setRealElapsed] = useState(0)
@@ -73,6 +73,7 @@ export default function PlayerEngine({
     if (!isPublic || previewParam === 'sim') return
     const yid = p.videoType === 'youtube' ? youtubeId(p.videoUrl) : null
     if (yid) {
+      setMediaMode('loading')
       let cancelled = false
       const boot = () => {
         if (cancelled || !window.YT?.Player) return
@@ -82,11 +83,11 @@ export default function PlayerEngine({
             playerVars: { playsinline: '1', controls: '0', rel: '0', modestbranding: '1', enablejsapi: '1', fs: '0', iv_load_policy: '3' },
             events: {
               onReady: e => {
-              setMediaMode('yt'); setDuration(e.target.getDuration() || 597); e.target.mute()
+              setMediaMode('yt'); { const d = Number(e.target.getDuration()); if (Number.isFinite(d) && d > 0) setDuration(d) } e.target.mute()
               try { const fr = e.target.getIframe(); Object.assign(fr.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', border: '0' }) } catch {}
             },
               onStateChange: e => { if (e.data === 0) setPlaying(false) },
-              onError: () => setYtFailed(true),
+              onError: () => { setYtFailed(true); setMediaMode('error') },
             },
           })
         } catch { setYtFailed(true) }
@@ -98,16 +99,16 @@ export default function PlayerEngine({
         if (!document.querySelector('script[data-yt-api]')) {
           const s = document.createElement('script')
           s.src = 'https://www.youtube.com/iframe_api'; s.async = true; s.dataset.ytApi = '1'
-          s.onerror = () => setYtFailed(true)
+          s.onerror = () => { setYtFailed(true); setMediaMode('error') }
           document.head.appendChild(s)
         }
       }
-      const t = setTimeout(() => { if (!ytRef.current?.getCurrentTime) setYtFailed(true) }, 6000)
+      const t = setTimeout(() => { if (!ytRef.current?.getCurrentTime) { setYtFailed(true); setMediaMode('error') } }, 6000)
       return () => { cancelled = true; clearTimeout(t); try { ytRef.current?.destroy?.() } catch {} }
     }
     const source = p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url) : p.videoUrl
     if (source) setMediaMode('html5')
-    else setMediaMode('sim')
+    else setMediaMode('none')
   }, [isPublic, p.id, p.videoUrl, p.videoType, p.gumletHlsUrl, p.gumletMp4Url, previewParam])
 
   const videoSource = p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url || '') : (p.videoUrl || '')
@@ -116,16 +117,19 @@ export default function PlayerEngine({
     if (!isPublic || mediaMode !== 'html5' || !videoSource || !videoRef.current) return
     const video = videoRef.current
     if (!isHls) { video.src = videoSource; return }
-    if (video.canPlayType('application/vnd.apple.mpegurl')) { video.src = videoSource; return }
     let cancelled = false
     let hls = null
     import('hls.js/light').then(({ default: Hls }) => {
       if (cancelled) return
-      if (!Hls.isSupported()) { setMediaMode('sim'); return }
+      if (!Hls.isSupported()) {
+        if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = videoSource
+        else setMediaMode('error')
+        return
+      }
       hls = new Hls({ enableWorker: true, lowLatencyMode: false })
       hlsRef.current = hls; hls.loadSource(videoSource); hls.attachMedia(video)
-      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { hls.destroy(); hlsRef.current = null; setMediaMode('sim') } })
-    }).catch(() => setMediaMode('sim'))
+      hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) { hls.destroy(); hlsRef.current = null; setMediaMode('error') } })
+    }).catch(() => { if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = videoSource; else setMediaMode('error') })
     return () => { cancelled = true; hls?.destroy(); hlsRef.current = null }
   }, [isPublic, mediaMode, videoSource, isHls])
 
@@ -142,27 +146,29 @@ export default function PlayerEngine({
         const t = ytRef.current.getCurrentTime() || 0
         if (Math.abs(t - stallRef.current.t) < .001) {
           stallRef.current.for += dt
-          if (stallRef.current.for > 2.5) { setMediaMode('sim'); stallRef.current.for = 0 }
+          if (stallRef.current.for > (isHls ? 12 : 5)) { setMediaMode('error'); stallRef.current.for = 0 }
         } else { stallRef.current.t = t; stallRef.current.for = 0 }
         setTime(t)
-        const d = ytRef.current.getDuration?.() || 597
-        if (d) setDuration(d)
+        const d = Number(ytRef.current.getDuration?.())
+        if (Number.isFinite(d) && d > 0) setDuration(d)
       } else if (mediaMode === 'html5' && videoRef.current && !videoRef.current.paused) {
         const t = videoRef.current.currentTime || 0
         if (Math.abs(t - stallRef.current.t) < .001) {
           stallRef.current.for += dt
-          if (stallRef.current.for > 2.5) { setMediaMode('sim'); stallRef.current.for = 0 }
+          if (stallRef.current.for > (isHls ? 12 : 5)) { setMediaMode('error'); stallRef.current.for = 0 }
         } else { stallRef.current.t = t; stallRef.current.for = 0 }
         setTime(t)
-      } else {
+      } else if (!isPublic && mediaMode === 'sim') {
         setTime(v => {
           const nv = v + dt * speed
           return nv >= duration ? duration : nv
         })
+      } else if (isPublic) {
+        setPlaying(false)
       }
     }, 250)
     return () => clearInterval(id)
-  }, [playing, duration, speed, mediaMode, domainBlocked, showLead, showExit, showResume, showPause, ad])
+  }, [playing, duration, speed, mediaMode, isHls, domainBlocked, showLead, showExit, showResume, showPause, ad])
 
   // ---------- efeitos colaterais do tempo ----------
   useEffect(() => {
@@ -266,7 +272,7 @@ export default function PlayerEngine({
   const effExit = builder ? modal('exit') : showExit
   const effPause = builder ? modal('play') : showPause
   const effAd = builder
-    ? (modal('ads') ? (p.ads?.[0] || { id: 'demo', at: 0, duration: 30, skipAfter: 5, enabled: true }) : null)
+    ? (modal('ads') ? (p.ads?.find(item => item.enabled) || null) : null)
     : ad
   const controlsVisible = unlocked || (builder && (feat('controls') || feat('fake')))
 
@@ -312,7 +318,7 @@ export default function PlayerEngine({
       {/* mídia */}
       {isPublic && youtubeId(p.videoUrl) && <div className={`vp-yt ${ytFailed ? 'hidden' : ''}`}><div id={'vt-yt-' + p.id} /></div>}
       {isPublic && mediaMode === 'html5' && videoSource && (
-        <video ref={videoRef} className="vp-video" src={isHls ? undefined : videoSource} poster={p.posterUrl || (currentYoutubeId ? `https://img.youtube.com/vi/${currentYoutubeId}/hqdefault.jpg` : undefined)} playsInline muted={!unlocked} preload="metadata" onLoadedMetadata={e => setDuration(e.target.duration || 597)} onEnded={() => setPlaying(false)} onError={() => setMediaMode('sim')} />
+        <video ref={videoRef} className="vp-video" src={isHls ? undefined : videoSource} poster={p.posterUrl || (currentYoutubeId ? `https://img.youtube.com/vi/${currentYoutubeId}/hqdefault.jpg` : undefined)} playsInline muted={!unlocked} preload="metadata" onLoadedMetadata={e => { const d = Number(e.target.duration); if (Number.isFinite(d) && d > 0) setDuration(d) }} onEnded={() => setPlaying(false)} onError={!isHls ? () => setMediaMode('error') : undefined} />
       )}
       <div className={`vp-poster ${unlocked && (mediaMode === 'yt' || mediaMode === 'html5') ? 'vp-poster-hidden' : ''}`}
         style={{ background: `linear-gradient(135deg, ${p.appearance.bg}, ${p.appearance.accent})` }}>
@@ -320,9 +326,14 @@ export default function PlayerEngine({
         <div className="vp-poster-veil" />
         <div className="vp-orbs"><i/><i/><i/><i/></div>
       </div>
+      {isPublic && ['none', 'error', 'loading'].includes(mediaMode) && <div className="vp-media-status">
+        <Icon name={mediaMode === 'loading' ? 'refresh' : mediaMode === 'none' ? 'film' : 'alert'} size={30} />
+        <strong>{mediaMode === 'loading' ? 'Carregando vídeo…' : mediaMode === 'none' ? 'Vídeo não configurado' : 'Não foi possível reproduzir este vídeo'}</strong>
+        <span>{mediaMode === 'none' ? 'O proprietário precisa adicionar uma fonte de vídeo antes de publicar.' : mediaMode === 'error' ? 'Confira a URL e as permissões da mídia no Gumlet ou YouTube.' : 'Aguarde enquanto o player conecta à fonte de vídeo.'}</span>
+      </div>}
 
       {/* gate de áudio */}
-      {!unlocked && !showResume && !effLead && !effExit && !effPause && !effAd && (
+      {!unlocked && !showResume && !effLead && !effExit && !effPause && !effAd && (!isPublic || !['none', 'error', 'loading'].includes(mediaMode)) && (
         <button className="vp-gate" onClick={() => playMedia()}>
           <span className="vp-headline">SEU VÍDEO JÁ COMEÇOU</span>
           <span className="vp-mute-icon"><Icon name="volume" size={vert ? 72 : 88} /></span>
@@ -374,7 +385,7 @@ export default function PlayerEngine({
           <button className="vp-ctrl" onClick={togglePlay} title={playing ? 'Pausar' : 'Reproduzir'}><Icon name={playing ? 'pause' : 'play'} size={16} /></button>
           {p.controls.seek5 && <button className="vp-ctrl" onClick={() => playMedia(Math.max(0, time - 5))} title="Voltar 5s"><Icon name="rewind" size={15} /></button>}
           {p.controls.seek5 && <button className="vp-ctrl" onClick={() => playMedia(Math.min(duration, time + 5))} title="Avançar 5s"><Icon name="forward" size={15} /></button>}
-          {p.controls.timecode && <span className="vp-time">{secToTime(time)} <i>/</i> {secToTime(duration)}</span>}
+          {p.controls.timecode && <span className="vp-time">{secToTime(time)} <i>/</i> {duration > 0 ? secToTime(duration) : '--:--'}</span>}
           <span className="vp-spacer" />
           {p.controls.quality && <div className="vp-quality-wrap">
             <button className="vp-ctrl" onClick={() => setShowQuality(v => !v)} title="Qualidade"><Icon name="gear" size={15} /></button>
@@ -413,11 +424,13 @@ export default function PlayerEngine({
 
       {/* captura de leads */}
       {effLead && (
-        <LeadGate cfg={p.lead} accent={p.appearance.accent} mode={mode} onSubmit={data => {
-          if (builder) { closeModal('lead'); onToast?.('Formulário válido — lead capturado na simulação.'); return }
+        <LeadGate cfg={p.lead} accent={p.appearance.accent} mode={mode} onSubmit={async data => {
+          if (builder) { closeModal('lead'); onToast?.('Formulário válido — pré-visualização, nada foi salvo.'); return true }
+          const saved = onLead ? await onLead(data) : false
+          if (saved === false) return false
           setLeadDone(true); setShowLead(false)
-          if (onLead) onLead(data)
           playMedia()
+          return true
         }} />
       )}
 
@@ -445,12 +458,13 @@ export default function PlayerEngine({
 }
 
 function LeadGate({ cfg, accent, mode, onSubmit }) {
-  const [form, setForm] = useState({ name: '', email: '', whatsapp: '' })
+  const [form, setForm] = useState({ name: '', email: '', whatsapp: '', consent: false, website: '' })
   const [err, setErr] = useState('')
   const submit = e => {
     e.preventDefault()
     if (!form.name.trim() || !/^\S+@\S+\.\S+$/.test(form.email)) { setErr('Preencha nome e um e-mail válido.'); return }
-    onSubmit(form)
+    if (!form.consent) { setErr('É necessário autorizar o uso dos dados para continuar.'); return }
+    Promise.resolve().then(() => onSubmit({ ...form, consentAt: new Date().toISOString() })).then(ok => { if (ok === false) setErr('Não foi possível enviar. Confira sua conexão e tente novamente.') }).catch(() => setErr('Não foi possível enviar. Confira sua conexão e tente novamente.'))
   }
   return (
     <div className="vp-overlay vp-lead-overlay">
@@ -458,9 +472,11 @@ function LeadGate({ cfg, accent, mode, onSubmit }) {
         <h3>{cfg.title}</h3>
         <p>{cfg.subtitle}</p>
         <form onSubmit={submit}>
+          <input type="text" name="website" value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, opacity: 0 }} />
           <label>NOME <span>*</span><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Seu nome" /></label>
           <label>E-MAIL <span>*</span><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Seu melhor e-mail" /></label>
           <label>WHATSAPP (OPCIONAL)<input value={form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} placeholder="(11) 99999-9999" /></label>
+          <label className="vp-lead-consent"><input type="checkbox" checked={form.consent} onChange={e => setForm({ ...form, consent: e.target.checked })} /><span>Autorizo o uso dos meus dados para receber contato relacionado a este conteúdo.{/^https?:\/\//i.test(cfg.privacyUrl || '') && <> <a href={cfg.privacyUrl} target="_blank" rel="noopener noreferrer">Política de Privacidade</a></>}</span></label>
           {err && <div className="vp-lead-err">{err}</div>}
           <button type="submit" className="vp-modal-btn" style={{ background: cfg.buttonBg || accent }}><Icon name="play" size={15} /> {cfg.buttonText || 'Continuar assistindo'}</button>
         </form>

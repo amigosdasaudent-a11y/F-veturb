@@ -1,0 +1,20 @@
+Para publicar nele a pasta que já está no seu computador, abra o PowerShell e rode:
+
+cd F:\veturb-projeto
+git init
+git add .
+git commit -m "Versão inicial do vêTurb"
+git branch -M main
+git remote add origin https://github.com/amigosdasaudent-a11y/F-veturb.git
+git push -u origin main
+
+Se aparecer uma mensagem dizendo que origin já existe, use antes:
+git remote set-url origin https://github.com/amigosdasaudent-a11y/F-veturb.git
+
+-----------------conexão com BD, git e versel -----------
+
+pedir pro Arena.ai se conecta com supabase, github e versel
+
+
+--------------------------tokem Versel Vêturb ---------------
+vcp_0gCD9eZOBE0RGfw2scD9UcoMQescsZXsQWl2mF8W3SUWrNNDFJ1RwWFC 

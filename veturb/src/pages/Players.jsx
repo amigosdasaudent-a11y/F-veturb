@@ -41,7 +41,7 @@ export default function Players() {
           {players.map(p => (
             <div className="player-card" key={p.id}>
               <div className="player-thumb" style={{ background: `linear-gradient(135deg, ${p.appearance.bg}, ${p.appearance.accent})` }} onClick={() => navigate(`/players/${p.id}/edit`)}>
-                {youtubeId(p.videoUrl) && <img src={`https://img.youtube.com/vi/${youtubeId(p.videoUrl)}/mqdefault.jpg`} alt="" onError={e => e.currentTarget.style.display = 'none'} />}
+                {(p.posterUrl || (p.videoType === 'youtube' && youtubeId(p.videoUrl))) && <img src={p.posterUrl || `https://img.youtube.com/vi/${youtubeId(p.videoUrl)}/hqdefault.jpg`} alt="Miniatura do vídeo" onError={e => { if (!p.posterUrl && e.currentTarget.dataset.fallback !== '1') { e.currentTarget.dataset.fallback = '1'; e.currentTarget.src = `https://img.youtube.com/vi/${youtubeId(p.videoUrl)}/mqdefault.jpg` } else e.currentTarget.style.display = 'none' }} />}
                 <div className="player-thumb-veil" />
                 <span className="thumb-orient"><Icon name={p.orientation === 'vertical' ? 'monitor' : 'film'} size={14} /> {p.orientation === 'vertical' ? '9:16' : '16:9'}</span>
                 <span className="thumb-play"><Icon name="play" size={20} /></span>
@@ -53,7 +53,7 @@ export default function Players() {
               </div>
               <div className="player-card-body">
                 <div className="player-card-title"><h3>{p.name || 'Sem nome'}</h3><Badge tone={p.status === 'active' ? 'green' : 'neutral'}>{p.status === 'active' ? 'Ativo' : 'Rascunho'}</Badge></div>
-                <p className="player-card-url"><Icon name="link" size={13} /> {p.videoUrl || 'Nenhum vídeo configurado'}</p>
+                <p className="player-card-url"><Icon name="link" size={13} /> {(p.videoType === 'gumlet' ? (p.gumletHlsUrl || p.gumletMp4Url || p.gumletShareUrl) : p.videoUrl) || 'Nenhum vídeo configurado'}</p>
                 <div className="player-stats">
                   <div><Icon name="eye" size={14} /><strong>{fmt(p.views)}</strong><span>views</span></div>
                   <div><Icon name="playOutline" size={14} /><strong>{fmt(p.plays)}</strong><span>plays</span></div>

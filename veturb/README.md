@@ -1,8 +1,7 @@
 # vêTurb — SaaS de VSLs e Players Inteligentes
 
-Aplicação construída a partir da descrição do produto e da sequência de telas enviadas (painel, builder de player, leads e métricas). O projeto funciona em modo demonstração com `localStorage` e agora inclui integração opcional de autenticação/persistência de estado no Supabase, suporte a vídeos Gumlet via URLs MP4/HLS e miniatura personalizada. Para ativar o Supabase são necessárias as variáveis públicas do seu projeto e a migração SQL; detalhes abaixo.
+Aplicação construída a partir da descrição do produto e da sequência de telas enviadas (painel, builder de player, leads e métricas). O modo local é apenas para desenvolvimento. Com Supabase configurado, a conta usa Auth/MFA, estado privado por usuário, configuração pública de players publicados e Edge Functions para registrar eventos e leads. Vídeos Gumlet MP4/HLS e miniatura personalizada são suportados.
 
-![Dashboard](docs/screenshots/02-dashboard.png)
 
 ---
 
@@ -25,19 +24,76 @@ Requisitos: Node.js 20.19+ (testado em 20.20.2). Sem configurar variáveis, o ap
 
 **Acesso demo (sem Supabase):** qualquer e-mail + senha com 4+ caracteres, por exemplo `joao@veturb.com.br` / `1234`.
 **Com Supabase configurado:** login e criação de conta usam Supabase Auth.
-Se o 2FA demo estiver ativado, o código de 6 dígitos é exibido na própria tela de login (no momento, o TOTP/MFA real ainda não está ligado ao Supabase).
+Com Supabase configurado, o TOTP/MFA usa o autenticador do usuário e é verificado pelo Supabase Auth. Sem Supabase, o modo de demonstração local não equivale a autenticação de produção.
+
+---
+
+## 🐙 Publicar o projeto no GitHub (Windows)
+
+Passo a passo para enviar a versão atual do projeto da pasta `F:\\veturb-projeto` ao repositório `https://github.com/amigosdasaudent-a11y/F-veturb.git`.
+
+1. Baixe o arquivo `veturb-projeto.zip` fornecido nesta conversa. Faça uma cópia de segurança da pasta local e extraia o ZIP em uma pasta temporária.
+2. Abra a pasta `veturb` que foi extraída e copie **o conteúdo dela** para `F:\\veturb-projeto`, substituindo os arquivos antigos. O pacote não inclui `node_modules`, `dist` nem `.env.local`.
+3. Abra o PowerShell e entre na pasta:
+
+```powershell
+cd F:\\veturb-projeto
+git --version
+```
+
+Se `git` não for reconhecido, instale o Git for Windows e abra um novo PowerShell. Configure sua identidade, se ainda não estiver configurada:
+
+```powershell
+git config --global user.name "Seu nome"
+git config --global user.email "seu-email-do-github"
+```
+
+4. Inicialize o repositório e configure a branch principal e o endereço remoto:
+
+```powershell
+if (-not (Test-Path .git)) { git init }
+git branch -M main
+$remote = git remote
+if ($remote -contains "origin") {
+  git remote set-url origin https://github.com/amigosdasaudent-a11y/F-veturb.git
+} else {
+  git remote add origin https://github.com/amigosdasaudent-a11y/F-veturb.git
+}
+```
+
+5. Confira se arquivos locais de ambiente não serão enviados. `.env.local` deve ser ignorado pelo `.gitignore`:
+
+```powershell
+git check-ignore .env.local
+git status --short
+```
+
+**Não envie senhas, tokens ou chaves `service_role` ao GitHub.**
+
+6. Adicione os arquivos, crie o commit e envie para o GitHub:
+
+```powershell
+git add .
+git commit -m "Publica versão atualizada do vêTurb"
+git push -u origin main
+```
+
+Se o GitHub pedir autenticação, use a janela de login no navegador/Git Credential Manager. Não cole sua senha ou token em chats. Depois, confira os arquivos em [github.com/amigosdasaudent-a11y/F-veturb](https://github.com/amigosdasaudent-a11y/F-veturb).
 
 ---
 
 ## 🗄️ Configurar banco Supabase
 
-O projeto tem integração com Supabase Auth e sincronização do estado privado da conta (`veturb_state`). Nesta sessão, a migração foi aplicada ao projeto **Lead turb pro** (região `sa-east-1`) e o preview foi configurado para esse projeto. Para reproduzir em outro ambiente/projeto:
+O Supabase conectado nesta sessão é **Lead turb pro** (região `sa-east-1`). As migrações `001_veturb_state.sql` a `005_allowlist_platform_admin_email.sql` foram aplicadas. As Edge Functions `track-player`, `capture-lead` e `save-mercadopago-credentials` foram implantadas. A tela de cobrança aceita Public Key e Access Token; o token fica no Supabase Vault. O e-mail administrativo fornecido pelo proprietário está allowlisted, mas ainda precisa ser cadastrado e confirmado no Supabase Auth deste projeto.
 
-1. No **SQL Editor**, execute `supabase/migrations/001_veturb_state.sql`.
-2. Copie `.env.example` para `.env.local` e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com **Project URL** e **anon/public key** do painel Supabase.
-3. Reinicie o Vite (`npm run dev`). Use **Criar conta** para registrar um usuário; em seguida entre com esse e-mail e senha.
+Para reproduzir em outro ambiente/projeto:
+1. Execute, em ordem, as migrações `001` a `005` em `supabase/migrations/`.
+2. Implante as Edge Functions em `supabase/functions/`, incluindo `save-mercadopago-credentials`.
+3. Confirme a conta cujo e-mail está em `veturb_platform_admin_allowlist`; antes da confirmação, o formulário administrativo permanece bloqueado.
+4. Copie `.env.example` para `.env.local` e preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` com **Project URL** e **anon/public key**.
+5. Configure Site URL e Redirect URLs no Auth e reinicie o Vite. Crie uma conta com seu próprio e-mail e senha.
 
-A chave `anon/public` pode ser usada no navegador **somente junto com RLS**, como a política da migração. **Nunca coloque a `service_role key` no front-end**, nem a envie por chat. Sem as variáveis, segue funcionando em modo local. O estado principal do painel é armazenado como JSON por usuário autenticado; o esquema normalizado, MFA, colaboração entre usuários do mesmo workspace, publicação pública de players e ingestão segura de eventos/Leads via Edge Functions precisam de configuração complementar antes de produção.
+A chave `anon/public` fica no navegador e depende das políticas RLS. **Nunca exponha nem coloque a `service_role key` no front-end, GitHub ou chat.** O estado de conta fica isolado por usuário; players públicos, eventos e leads estão em tabelas separadas com RLS e Edge Functions. Cobrança recorrente e colaboração entre diferentes contas ainda não estão configuradas.
 
 ---
 
@@ -51,8 +107,8 @@ A chave `anon/public` pode ser usada no navegador **somente junto com RLS**, com
 | `#/players/:id/edit` | Edição do player + códigos de incorporação |
 | `#/leads` | Leads capturados, busca, filtro por player e exportação CSV |
 | `#/metrics` | Curva de retenção, funil de conversão, performance por player, log de eventos |
-| `#/plans` | Planos, checkout PIX Mercado Pago (simulado) e liberação automática |
-| `#/profile` | Dados, senha, 2FA com app autenticador e códigos de recuperação |
+| `#/plans` | Status da assinatura; checkout recorrente ainda não configurado |
+| `#/profile` | Perfil, atualização de senha e configuração TOTP/MFA no Supabase Auth |
 | `#/p/:id` | Player público (rota de embed ultra rápida, com console de eventos) |
 | `#/embed/:id` | Player minimalista sem chrome, pronto para iframe |
 
@@ -78,29 +134,25 @@ A coluna esquerda replica a estrutura das imagens, em acordeão (uma seção abe
 12. **Rastreamento** — Facebook Pixel ID, GTM ID e toggles dos eventos automáticos.
 13. **Domínios Permitidos** — whitelist de domínios e bloqueio de Inspect Element/DevTools.
 
-![Builder](docs/screenshots/07-builder-live.png)
-![Captura de leads](docs/screenshots/09-builder-lead.png)
 
 A coluna central traz o preview responsivo com alternância **Vídeo Horizontal / Vídeo Vertical (Shorts)**; a direita mostra o estado bloqueado antes de salvar e, depois, libera o **código iframe responsivo** e o **link direto** com botões de copiar.
 
 **Gumlet:** envie o arquivo na biblioteca do Gumlet; em **Share video → URLs**, copie a URL MP4 (recomendada) ou HLS `.m3u8` e a URL da miniatura para os campos correspondentes no vêTurb. O campo Share URL é guardado como referência; ele não substitui o URL direto de reprodução. O HLS é reproduzido via hls.js em navegadores sem suporte HLS nativo.
 
-![Player salvo e códigos de incorporação](docs/screenshots/11-builder-saved.png)
 
 ---
 
 ## 🎥 Player público
 
-- Usa a **YouTube IFrame Player API** quando a URL é do YouTube, `<video>` HTML5 para MP4/upload e um modo de simulação quando não há mídia (ou se o YouTube travar — fallback automático após 2,5s).
+- Usa a **YouTube IFrame Player API** quando a URL é do YouTube e `<video>` HTML5 para MP4/Gumlet HLS. Um player público sem fonte ou com mídia inacessível mostra um erro real — não inventa progresso nem espectadores.
 - Gate "SEU VÍDEO JÁ COMEÇOU / Clique para ouvir" com desbloqueio de áudio.
 - Controles customizados, quality menu, seek ±5s, fullscreen, timecode e fake progress.
 - **CTA cronometrado**, selos de escassez/LIVE com contador de espectadores, anúncios overlay, modal de retomada inteligente (salva progresso), modal de pausa, exit intent e formulário de captura de leads.
 - Whitelist de domínios e bloqueio de DevTools funcionam de verdade na rota pública.
 - Console de eventos em tempo real em `#/p/:id`.
 
-![Player público](docs/screenshots/12-public-player.png)
 
-Para testar o fluxo completo: abra `#/p/ply_odonto?preview=1`, clique em "Clique para ouvir" e aguarde o formulário de lead (12s). O lead aparece imediatamente em **Leads** e incrementa as métricas.
+Para capturar leads reais, crie um player, configure uma fonte de vídeo, habilite a captura, informe a política de privacidade, salve e publique. O visitante precisa consentir; depois o lead aparecerá na tela **Leads** da conta proprietária. Não existe lead pré-carregado.
 
 ---
 
@@ -116,42 +168,35 @@ Ao interagir com o player público, os eventos são gravados e também enviados 
 | `cta` | `PlayerCtaClick` | `player_cta_click` |
 | `conversion` (lead) | `PlayerLead` | `player_lead` |
 
-`window.fbq` e `window.dataLayer` são chamados quando presentes; independentemente disso, tudo é registrado localmente para o dashboard, a curva de retenção, o funil de conversão e o log de eventos.
-
-![Métricas](docs/screenshots/16-metrics.png)
-![Leads](docs/screenshots/15-leads.png)
+`window.fbq` e `window.dataLayer` são chamados quando presentes. Em uma conta Supabase, eventos e leads ficam em tabelas separadas com acesso do dono via RLS; leads são persistidos pela Edge Function `capture-lead`, sem depender da sessão do visitante.
 
 ---
 
-## 🔐 Segurança, pagamentos e multi-tenant
+## 🔐 Segurança, pagamentos e limites atuais
 
-- **2FA**: ativação com chave secreta + QR, código de 6 dígitos (compatível com Google Authenticator/Authy) e 6 códigos de recuperação. O login passa a exigir o código.
-- **Mercado Pago**: checkout PIX com QR Code, "copia e cola" e botão de simulação de pagamento que libera o plano na hora (badge do sidebar muda).
-- **Workspaces**: alternância entre `Odonto Care` e `Demo VSL`, com players, leads e eventos isolados por tenant.
-
-![Planos](docs/screenshots/17-plans.png)
-![Perfil / 2FA](docs/screenshots/18-profile.png)
+- **2FA**: TOTP via Supabase Auth, com QR/chave secreta, confirmação e desafio no login. Códigos de recuperação não são oferecidos nesta versão.
+- **Players públicos**: apenas players publicados ficam disponíveis anonimamente; domínio e publicação são verificados no Supabase.
+- **Leads/eventos**: Edge Functions usam segredo de servidor fora do navegador, aplicam validação e limite por IP/player. Leads exigem consentimento.
+- **Assinaturas**: não existe checkout ou ativação de plano ainda. Não mostramos preço nem simulamos pagamento. Precisamos definir produto, valores, periodicidade e provedor.
+- **Workspaces**: organização dentro da conta atual; compartilhamento entre usuários diferentes não está implementado.
 
 ---
 
-## ⚠️ O que é real e o que é simulado
+## ✅ Estado verificado
 
-| Item | Status |
+| Item | Estado |
 | --- | --- |
-| Interface completa, builder, preview, embeds, player, gráficos, leads, 2FA, workspaces | ✅ Funcional |
-| Persistência em modo demonstração | ✅ `localStorage` (neste navegador) |
-| Supabase Auth + estado JSON privado por usuário | ✅ Integração opcional preparada; requer URL/chave pública e migração SQL |
-| YouTube IFrame API / MP4 HTML5 / Gumlet MP4 e HLS | ✅ Compatibilidade implementada (Gumlet via URLs copiadas do painel) |
-| Eventos `fbq` / `dataLayer` | ✅ Disparados quando os scripts/IDs existem |
-| Whitelist de domínios e bloqueio DevTools | ✅ Real na rota pública |
-| Checkout Mercado Pago PIX | 🔶 Simulado (sem chamada à API, sem cobrança) |
-| Código TOTP do 2FA | 🔶 Demo (código exibido na tela, não é TOTP criptográfico) |
-| Upload de vídeo/imagem | 🔶 URL local temporária da sessão (`URL.createObjectURL`) |
-| Upload do vídeo para Gumlet a partir do vêTurb | ⛔ Não é upload direto: envie no Gumlet e cole os URLs MP4/HLS/miniatura no builder |
-| Players públicos e ingestão de eventos/leads por Edge Function no Supabase | 🔶 Ainda exigem endpoints/funções de servidor antes de produção |
-| Cobrança Mercado Pago e armazenamento permanente de arquivos | 🔶 Simulados/não configurados |
+| Login e persistência privada | Supabase Auth + tabela JSON por conta, com RLS |
+| MFA | TOTP real pelo Supabase Auth |
+| Player público e embed Gumlet | Validado no navegador com HLS Gumlet; configuração publicada servida pelo Supabase |
+| Eventos/Leads | Edge Functions no Supabase; tabelas próprias e políticas RLS |
+| CSV de métricas/leads | Exportação local funcional |
+| Mercado Pago / assinatura recorrente | Não configurado; nenhuma cobrança é efetuada |
+| Armazenamento de mídia | O vídeo continua hospedado no Gumlet; usar os links do painel, sem upload direto pelo vêTurb |
+| Upload de imagem | URL local temporária; armazenamento permanente ainda requer Storage/back-end |
+| Compartilhamento multiusuário/workspace | Não implementado |
 
-A descrição original cita **React 19, Vite 7, Tailwind v4, shadcn/ui, TanStack Query, React Router e Supabase**. Esta implementação usa **React 19 + Vite 6 + CSS puro**, hash routing, camada local de demonstração e integração Supabase opcional (`src/lib/supabase.js`).
+A implementação usa **React 19 + Vite 6 + CSS puro**, hash routing e integração com Supabase (`src/lib/supabase.js`). Os arquivos PNG em `docs/screenshots/` são referências visuais/capturas de QA; não representam leads, preços ou métricas atuais.
 
 ### Variáveis de ambiente
 
@@ -173,13 +218,16 @@ veturb/
 ├── package.json
 ├── vite.config.js          # host 0.0.0.0, allowedHosts para preview
 ├── README.md
-├── docs/screenshots/        # capturas das telas geradas
+├── supabase/
+│   ├── migrations/          # RLS, estado, players públicos, eventos e leads
+│   └── functions/           # Edge Functions de eventos e captura de leads
+├── docs/screenshots/        # referências visuais e capturas de QA
 └── src/
     ├── main.jsx
     ├── App.jsx              # shell, sidebar, roteamento hash, auth, notificações
     ├── styles.css           # design system completo
     ├── lib/
-    │   ├── db.js            # estado, seed multi-tenant, eventos, agregações
+    │   ├── db.js            # estado inicial vazio, limpeza de fixtures legadas, eventos e agregações
     │   ├── ctx.jsx          # context da aplicação
     │   └── icons.jsx        # ícones SVG inline
     ├── components/
@@ -193,8 +241,10 @@ veturb/
 
 ---
 
-## ✅ Validação
+## ✅ Validação desta versão
 
-- `npm run build` — passa sem erros.
-- Smoke tests com Playwright/Chromium em todas as rotas: **zero erros de console**.
-- Fluxos testados ponta a ponta: login → 2FA, criação/edição/salvamento de player, geração de embed, player público → captura de lead → tabela de leads → métricas, checkout PIX → ativação de plano, troca de workspace.
+- `npm run build` — concluído sem erros após as últimas alterações.
+- Gumlet HLS testado no Chromium por 15 segundos; `readyState=4`, sem erros de console/requisição, duração reportada de aproximadamente 638 segundos. Captura: `docs/screenshots/36-gumlet-playback-test.png`.
+- Edge Functions `track-player` e `capture-lead` responderam e retornaram 404 esperado ao receberem IDs de player inexistentes; sem dados de conta de teste foram criados.
+- Banco Supabase consultado: `veturb_state`, `veturb_public_players`, `veturb_events` e `veturb_leads` estavam vazios no momento da consulta.
+- Fluxo de cobrança não foi testado nem está ativo.

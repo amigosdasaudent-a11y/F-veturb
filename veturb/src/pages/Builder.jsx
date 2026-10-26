@@ -295,6 +295,7 @@ function SectionBody({ id, p, setTop, setKey, vertical, setVertical, setAd, addA
       <div className="field-row"><Field label="Gatilho no segundo"><Input type="number" min="0" value={p.lead.at} onChange={v => setKey('lead', 'at', Number(v))} /></Field><Field label="Texto do Botão"><Input value={p.lead.buttonText} onChange={v => setKey('lead', 'buttonText', v)} /></Field></div>
       <Field label="Título Principal"><Input value={p.lead.title} onChange={v => setKey('lead', 'title', v)} /></Field>
       <Field label="Subtítulo / Descrição"><Input value={p.lead.subtitle} onChange={v => setKey('lead', 'subtitle', v)} /></Field>
+      <Field label="URL da Política de Privacidade" hint="Opcional; exibida junto ao consentimento do formulário"><Input value={p.lead.privacyUrl || ''} onChange={v => setKey('lead', 'privacyUrl', v)} placeholder="https://seusite.com.br/privacidade" /></Field>
       <div className="field-row"><ColorField label="Cor do Modal" value={p.lead.bg} onChange={v => setKey('lead', 'bg', v)} /><ColorField label="Cor do Botão" value={p.lead.buttonBg} onChange={v => setKey('lead', 'buttonBg', v)} /></div>
       <div className="mini-info"><Icon name="users" size={14} /> Leads capturados aparecem automaticamente no menu <strong>Leads</strong>.</div>
     </>

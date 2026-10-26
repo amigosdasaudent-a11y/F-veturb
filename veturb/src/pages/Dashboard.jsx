@@ -8,18 +8,18 @@ export default function Dashboard() {
   const { db, navigate, showToast } = useApp()
   const players = playersOf(db, db.activeWorkspace)
   const events = useMemo(() => eventsOf(db, db.activeWorkspace), [db])
-  const days = aggregate(events, 14)
+  const [range, setRange] = useState(14)
+  const days = aggregate(events, 30).slice(-range)
   const views = days.reduce((a, b) => a + b.views, 0)
   const plays = days.reduce((a, b) => a + b.plays, 0)
   const ctas = days.reduce((a, b) => a + b.cta, 0)
   const conv = days.reduce((a, b) => a + b.conversions, 0)
   const retention = retentionRate(events)
   const leads = db.leads.filter(l => players.some(p => p.id === l.playerId))
-  const [range, setRange] = useState(14)
 
-  const viewSeries = days.slice(-range).map(d => d.views)
-  const convSeries = days.slice(-range).map(d => d.conversions)
-  const labels = days.slice(-range).map(d => d.label)
+  const viewSeries = days.map(d => d.views)
+  const convSeries = days.map(d => d.conversions)
+  const labels = days.map(d => d.label)
   const prev = (arr) => { const a = arr.slice(0, Math.floor(arr.length / 2)).reduce((x, y) => x + y, 0), b = arr.slice(Math.floor(arr.length / 2)).reduce((x, y) => x + y, 0); return a ? Math.round(((b - a) / a) * 100) : 0 }
 
   const recent = [...events].sort((a, b) => b.ts - a.ts).slice(0, 8)
@@ -29,9 +29,9 @@ export default function Dashboard() {
   return (
     <div className="content">
       <div className="page-head">
-        <div><h1>Dashboard</h1><p>Visão geral dos seus players e conversões em tempo real.</p></div>
+        <div><h1>Dashboard</h1><p>Indicadores calculados a partir dos eventos registrados pelos seus players.</p></div>
         <div className="head-actions">
-          <div className="seg-range">{[7, 14, 30].map(r => <button key={r} className={range === r ? 'active' : ''} onClick={() => setRange(Math.min(r, 14))}>{r}d</button>)}</div>
+          <div className="seg-range">{[7, 14, 30].map(r => <button key={r} className={range === r ? 'active' : ''} onClick={() => setRange(r)}>{r}d</button>)}</div>
           <Btn variant="primary" icon="plus" onClick={() => navigate('/players/new')}>Novo Player</Btn>
         </div>
       </div>
@@ -45,7 +45,7 @@ export default function Dashboard() {
 
       <div className="dash-grid">
         <div className="card chart-card wide">
-          <div className="card-head"><div><h3>Visualizações & plays</h3><p>Últimos {range} dias</p></div><Badge tone="green"><i className="live-dot" /> Ao vivo</Badge></div>
+          <div className="card-head"><div><h3>Visualizações & plays</h3><p>Últimos {range} dias</p></div><Badge tone="neutral">Período selecionado</Badge></div>
           <div className="dual-legend"><span><i style={{ background: '#7440B6' }} /> Visualizações</span><span><i style={{ background: '#22c55e' }} /> Plays</span></div>
           <div className="dual-chart">
             <LineChart series={viewSeries} labels={labels} color="#7440B6" height={230} maxValue={Math.max(...viewSeries, ...days.slice(-range).map(d => d.plays), 1)} />
